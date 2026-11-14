@@ -1,43 +1,24 @@
 import { compactResult } from './model/session.js';
-import { findModel } from './model/extra-models.js';
 
 export const EXIT = Object.freeze({ ok: 0, error: 1, usage: 2, fatalKick: 3, reconnect: 75 });
 
-const KEY_ENV = {
-    anthropic: 'ANTHROPIC_API_KEY',
-    openai: 'OPENAI_API_KEY',
-    google: 'GEMINI_API_KEY',
-    openrouter: 'OPENROUTER_API_KEY',
-    xai: 'XAI_API_KEY',
-    groq: 'GROQ_API_KEY',
-    mistral: 'MISTRAL_API_KEY',
-    deepseek: 'DEEPSEEK_API_KEY',
-};
-
 export function keyEnvFor(provider) {
-    return (
-        KEY_ENV[provider] ??
-        `${String(provider)
-            .toUpperCase()
-            .replace(/[^A-Z0-9]/g, '_')}_API_KEY`
-    );
+    if (provider === 'google') return 'GEMINI_API_KEY';
+    return `${String(provider)
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '_')}_API_KEY`;
 }
 
 export async function checkModel(config, { sdk } = {}) {
-    if (config.model.baseUrl) {
-        if (!config.apiKey && !process.env.MODEL_API_KEY)
-            return `--base-url needs a key: set MODEL_API_KEY in .env or the environment.`;
-        return null;
-    }
     const { ModelRuntime } = sdk ?? (await import('@earendil-works/pi-coding-agent'));
-    const runtime = await ModelRuntime.create({ modelsPath: config.modelsPath ?? null, allowModelNetwork: false });
+    const runtime = await ModelRuntime.create({ allowModelNetwork: false });
     const { provider, id } = config.model;
-    if (!runtime.getProviders().some(p => p.id === provider))
-        return `Unknown provider "${provider}". Run "minecraft-agent models" to see providers with keys set, or "minecraft-agent models --all".`;
-    if (!findModel(runtime, provider, id))
-        return `Unknown model ${provider}/${id}. Run "minecraft-agent models ${provider}" to list its models.`;
-    if (!config.apiKey && !runtime.hasConfiguredAuth(provider))
-        return `No API key for ${provider}. Set ${keyEnvFor(provider)} in .env (copy .env.example) or export it.`;
+    if (provider !== 'google' || !runtime.getProviders().some(p => p.id === 'google'))
+        return `Unknown provider "${provider}". Only Google Gemini models are supported.`;
+    if (!runtime.getModel('google', id))
+        return `Unknown model ${provider}/${id}. Run "minecraft-agent models" to list Gemini models.`;
+    if (!config.apiKey && !process.env.GEMINI_API_KEY && !runtime.hasConfiguredAuth('google'))
+        return `No API key for google. Set GEMINI_API_KEY in .env (copy .env.example) or export it.`;
     return null;
 }
 

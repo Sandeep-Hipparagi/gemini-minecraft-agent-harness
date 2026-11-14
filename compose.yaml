@@ -22,6 +22,7 @@ services:
     environment:
       MC_HOST: server
       MC_PORT: '25565'
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
       AGENT_OBJECTIVE: ${AGENT_OBJECTIVE:-Gather wood and build a small shelter near spawn}
     depends_on:
       server:

@@ -1,9 +1,15 @@
 {
-  "name": "minecraft-agent-harness",
+  "name": "gemini-minecraft-agent-harness",
   "version": "0.1.0",
-  "description": "Minecraft agents with persistent model sessions, shell sandboxes and Mineflayer tools.",
+  "description": "Standalone, Gemini-only autonomous Minecraft agent harness built on Mineflayer and pi-coding-agent with multi-agent orchestration and telemetry benchmarking.",
   "private": true,
   "type": "module",
+  "author": "Sandeep Hipparagi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Sandeep-Hipparagi/gemini-minecraft-agent-harness.git"
+  },
   "bin": {
     "minecraft-agent": "bin/minecraft-agent.js"
   },
@@ -30,20 +36,24 @@
     "format:check": "prettier --check .",
     "check": "npm run lint && npm run format:check && npm test",
     "server": "node scripts/dev-server.js",
-    "vision:install": "npm install --no-save prismarine-viewer@1.33.0 node-canvas-webgl@0.3.0 && patch-package --patch-dir src/vision/patches"
+    "team": "node bin/minecraft-agent.js team",
+    "telemetry": "node scripts/summarize-telemetry.js",
+    "benchmark": "node scripts/benchmark-team.js",
+    "compare": "node scripts/compare-benchmarks.js"
   },
   "keywords": [
     "minecraft",
     "mineflayer",
     "agent",
-    "llm",
-    "pi",
-    "ai"
+    "gemini",
+    "google-gemini",
+    "ai",
+    "multi-agent",
+    "benchmark"
   ],
   "dependencies": {
     "@earendil-works/pi-ai": "0.82.0",
     "@earendil-works/pi-coding-agent": "0.82.0",
-    "e2b": "^2.59.0",
     "minecraft-data": "3.116.0",
     "mineflayer": "4.33.0",
     "mineflayer-collectblock": "1.6.0",

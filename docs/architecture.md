@@ -15,7 +15,7 @@ bin/minecraft-agent.js ── src/cli.js ── src/config.js ── src/agent.j
           │                                               │
           ▼                                               ▼
    src/skills/*.js                                 src/sandbox/shell-sandbox.js
-   pathing, digging, building,                     Docker, E2B or local shell with a tool relay
+   pathing, digging, building,                     Docker or local shell with a tool relay
    crafting, line-of-sight perception
 ```
 
@@ -58,20 +58,21 @@ bin/minecraft-agent.js ── src/cli.js ── src/config.js ── src/agent.j
 `add` registration helper and the options it was given), then runs one builder per domain in `src/tools/game/`. Each
 builder registers its tools and returns the helpers later builders need, which are merged into the context:
 
-| File               | Contents                                                                                     |
-| ------------------ | -------------------------------------------------------------------------------------------- |
-| `helpers.js`       | shared helpers: pathfinder loading, deadlines, stall watch, drop pickup, block lookups       |
-| `core.js`          | `add` (validation, action runner, alerts), `call`, `blockAt`                                 |
-| `perception.js`    | `observe_world`, `look`, `inspect_block`                                                     |
-| `movement.js`      | `stop_action`, `go_to`, `fly_to`, `move`, `return_to_surface`, `door`, `go_through_door`     |
-| `gathering.js`     | `gather`, `break_block`, `break_area`                                                        |
-| `placement.js`     | placement planning, scaffolding and bridging used by `place`                                 |
-| `building.js`      | `place`, `place_line`                                                                        |
-| `items.js`         | `inventory`, `equip`, `eat`, `use_item`, `select_hotbar`, `drop_item`, `interact_*`, `sleep` |
-| `combat.js`        | `attack`, `flee`                                                                             |
-| `crafting.js`      | `craft`, `smelt`, `furnace`                                                                  |
-| `containers.js`    | `view_window`, `click_slot`, `close_window`, `open_container`, `deposit`, `withdraw`         |
-| `communication.js` | chat, DMs and the shared plan                                                                |
+| File                 | Contents                                                                                     |
+| -------------------- | -------------------------------------------------------------------------------------------- |
+| `helpers.js`         | shared helpers: pathfinder loading, deadlines, stall watch, drop pickup, block lookups       |
+| `core.js`            | `add` (validation, action runner, alerts), `call`, `blockAt`                                 |
+| `perception.js`      | `observe_world`, `look`, `inspect_block`                                                     |
+| `movement.js`        | `stop_action`, `go_to`, `fly_to`, `move`, `return_to_surface`, `door`, `go_through_door`     |
+| `gathering.js`       | `gather`, `break_block`, `break_area`                                                        |
+| `collect-nearest.js` | `find_and_collect_nearest`                                                                   |
+| `placement.js`       | placement planning, scaffolding and bridging used by `place`                                 |
+| `building.js`        | `place`, `place_line`                                                                        |
+| `items.js`           | `inventory`, `equip`, `eat`, `use_item`, `select_hotbar`, `drop_item`, `interact_*`, `sleep` |
+| `combat.js`          | `attack`, `flee`                                                                             |
+| `crafting.js`        | `craft`, `smelt`, `furnace`                                                                  |
+| `containers.js`      | `view_window`, `click_slot`, `close_window`, `open_container`, `deposit`, `withdraw`         |
+| `communication.js`   | chat, DMs and the shared plan                                                                |
 
 Below those sit `runtime.js` (action runner, skill compatibility, body stop), `guards.js` (edge, swim and built-block
 guards), `observation.js`, `schema.js` (argument schemas and validation) and `failures.js` (failure codes). The index
@@ -83,7 +84,6 @@ schema against a committed snapshot, so moving code between files cannot change 
 `run_shell` executes commands in a per-agent persistent machine (`src/sandbox/shell-sandbox.js`, `src/sandbox/docker.js`):
 
 - `docker`: a persistent container per agent with the agent's state directory mounted as home.
-- `e2b`: a cloud VM per agent, paused when idle and resumed on demand.
 - `local`: `bash` in a directory under the agent's state.
 
 All of them start a small HTTP relay (`src/sandbox/assets/relay.cjs`) and install a `tool` command. A script in the sandbox
@@ -108,7 +108,6 @@ coordination happens over DMs and the shared machine. See [multi-agent.md](multi
 materials, inventory and block placement handling, entity velocity updates, collectblock pickup cancellation,
 pathfinder lava avoidance and stop behaviour, pvp updates on physics ticks, and suppression of protodef packet dumps.
 Dig-time calculations omit the water penalty because the bot's water-state calculation is unreliable.
-`src/vision/patches/` holds the renderer patch used by `npm run vision:install`.
 
 ## Process model and reconnects
 

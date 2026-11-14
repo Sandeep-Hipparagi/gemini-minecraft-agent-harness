@@ -1,12 +1,28 @@
 {
+  "team": "gemini-crew",
   "host": "localhost",
   "port": 25565,
-  "model": "openai/gpt-6.1-terra",
-  "objective": "Build a small village together: at least three houses, a farm and a path between them.",
-  "sharedMachine": "local",
+  "minecraftVersion": "1.21.4",
+  "auth": "offline",
+  "sandbox": "local",
   "agents": [
-    { "name": "Ada" },
-    { "name": "Bram" },
-    { "name": "Cleo", "personality": "Careful planner who writes everything down." }
+    {
+      "name": "ArchitectPro",
+      "model": "google/gemini-2.5-pro",
+      "thinking": "high",
+      "objective": "Act as team coordinator. Survey the spawn area, write a step-by-step build and resource plan into the shared directory, and assign concrete gathering and construction tasks to GathererFlash and BuilderFlash via direct messages. Monitor progress and unblock teammates."
+    },
+    {
+      "name": "GathererFlash",
+      "model": "google/gemini-2.5-flash",
+      "thinking": "low",
+      "objective": "Act as resource specialist. Check mailbox messages from ArchitectPro for material quotas, use find_and_collect_nearest to harvest logs, cobblestone, coal, and iron, craft basic tools, and deliver materials to the base chest or BuilderFlash."
+    },
+    {
+      "name": "BuilderFlash",
+      "model": "google/gemini-2.5-flash",
+      "thinking": "low",
+      "objective": "Act as construction and crafting specialist. Follow ArchitectPro's build plan and mailbox instructions to clear the build site, craft workstations (crafting table, furnace, chests), and construct the base shelter using materials supplied by GathererFlash."
+    }
   ]
 }

@@ -5,6 +5,7 @@ import { createCore } from './game/core.js';
 import { createPerception } from './game/perception.js';
 import { createMovement } from './game/movement.js';
 import { createGathering } from './game/gathering.js';
+import { createCollectNearest } from './game/collect-nearest.js';
 import { createPlacement } from './game/placement.js';
 import { createBuilding } from './game/building.js';
 import { createItems } from './game/items.js';
@@ -54,6 +55,7 @@ const TOOL_ORDER = [
     'move',
     'look',
     'gather',
+    'find_and_collect_nearest',
     'return_to_surface',
     'break_block',
     'break_area',
@@ -96,6 +98,7 @@ const BUILDERS = [
     createPerception,
     createMovement,
     createGathering,
+    createCollectNearest,
     createPlacement,
     createBuilding,
     createItems,

@@ -36,6 +36,19 @@ test('creative prompts and unknown difficulties add nothing', () => {
     assert.equal(buildSystemPrompt(base), buildSystemPrompt({ ...base, difficulty: null }));
 });
 
+test('prompts include find_and_collect_nearest guidance and failure code handling', () => {
+    const solo = buildSystemPrompt(base);
+    assert.match(solo, /find_and_collect_nearest/);
+    assert.match(solo, /not_found/);
+    assert.match(solo, /missing_item/);
+    assert.match(solo, /no_path/);
+    const team = buildSystemPrompt({ ...base, team: true });
+    assert.match(team, /find_and_collect_nearest/);
+    assert.match(team, /not_found/);
+    assert.match(team, /missing_item/);
+    assert.match(team, /no_path/);
+});
+
 test('difficulty is read from the packet whether it arrives as a name or an index', async () => {
     const { EventEmitter } = await import('node:events');
     const { installDifficulty, currentDifficulty } = await import('../../src/body/difficulty.js');

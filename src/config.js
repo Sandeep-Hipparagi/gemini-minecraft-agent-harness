@@ -9,7 +9,7 @@ export const DEFAULTS = Object.freeze({
     minecraftVersion: '1.21.6',
     name: 'Agent',
     gameMode: 'survival',
-    model: 'openai/gpt-6.1-terra',
+    model: 'google/gemini-2.5-flash',
     thinking: 'medium',
     tickRate: 20,
     vision: false,
@@ -27,8 +27,7 @@ const ENV = {
     objective: 'AGENT_OBJECTIVE',
     gameMode: 'AGENT_GAME_MODE',
     model: 'AGENT_MODEL',
-    baseUrl: 'MODEL_BASE_URL',
-    modelsFile: 'AGENT_MODELS_FILE',
+    geminiModel: 'GEMINI_MODEL',
     thinking: 'AGENT_THINKING',
     sandbox: 'AGENT_SANDBOX',
     dockerImage: 'AGENT_DOCKER_IMAGE',
@@ -47,10 +46,9 @@ const ENV = {
 };
 
 const THINKING = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
-const SANDBOXES = ['none', 'local', 'docker', 'e2b'];
+const SANDBOXES = ['none', 'local', 'docker'];
 
 export function defaultSandbox(env, probeDocker = dockerAvailable) {
-    if (env.E2B_API_KEY) return 'e2b';
     return probeDocker() ? 'docker' : 'local';
 }
 
@@ -68,13 +66,18 @@ export function fromEnv(env = process.env) {
     const out = {};
     for (const [key, name] of Object.entries(ENV))
         if (env[name] !== undefined && env[name] !== '') out[key] = env[name];
+    if (!out.model && out.geminiModel) out.model = out.geminiModel;
     return out;
 }
 
 export function parseModelRef(ref) {
     const value = String(ref ?? '').trim();
+    if (!value) throw new Error('Model reference cannot be empty');
     const slash = value.indexOf('/');
-    if (slash <= 0 || slash === value.length - 1)
+    if (slash === -1) {
+        return { provider: 'google', id: value };
+    }
+    if (slash === 0 || slash === value.length - 1)
         throw new Error(`Model must look like <provider>/<model-id>, got "${value}"`);
     return { provider: value.slice(0, slash), id: value.slice(slash + 1) };
 }
@@ -84,6 +87,7 @@ export function resolveConfig(
     { env = process.env, cwd = process.cwd(), now = Date.now(), probeDocker = dockerAvailable } = {},
 ) {
     const raw = Object.assign({}, DEFAULTS, ...layers.filter(Boolean));
+    if (raw.geminiModel && raw.model === DEFAULTS.model) raw.model = raw.geminiModel;
     const errors = [];
     const port = Number(raw.port);
     if (!Number.isInteger(port) || port < 1 || port > 65535) errors.push(`port must be 1-65535, got ${raw.port}`);
@@ -99,10 +103,11 @@ export function resolveConfig(
     if (!(tickRate > 0 && tickRate <= 20)) errors.push('tickRate must be between 1 and 20');
     const sandbox = raw.sandbox ?? defaultSandbox(env, probeDocker);
     if (!SANDBOXES.includes(sandbox)) errors.push(`sandbox must be one of ${SANDBOXES.join(', ')}`);
-    if (sandbox === 'e2b' && !env.E2B_API_KEY) errors.push('sandbox e2b needs E2B_API_KEY');
     let model;
     try {
         model = parseModelRef(raw.model);
+        if (model.provider !== 'google')
+            errors.push(`Only Google Gemini models are supported, got "${model.provider}"`);
     } catch (e) {
         errors.push(e.message);
     }
@@ -127,17 +132,8 @@ export function resolveConfig(
         soul,
         team: bool(raw.team ?? false),
         peers: Array.isArray(raw.peers) ? raw.peers.filter(n => /^[A-Za-z0-9_]{1,16}$/.test(n) && n !== raw.name) : [],
-        model: {
-            ...model,
-            ...(raw.baseUrl ? { baseUrl: raw.baseUrl, name: raw.modelName ?? model.id } : {}),
-            ...(raw.serviceTier ? { serviceTier: raw.serviceTier } : {}),
-            ...(raw.requestTimeoutMs ? { requestTimeoutMs: Number(raw.requestTimeoutMs) } : {}),
-            ...(raw.baseUrl && raw.apiKeyHeader && env.MODEL_API_KEY
-                ? { headers: { [raw.apiKeyHeader]: env.MODEL_API_KEY } }
-                : {}),
-        },
-        apiKey: raw.baseUrl ? env.MODEL_API_KEY : undefined,
-        modelsPath: raw.modelsFile ? path.resolve(cwd, raw.modelsFile) : null,
+        model,
+        apiKey: env.GEMINI_API_KEY,
         thinking: raw.thinking,
         tickRate,
         vision: bool(raw.vision),
@@ -147,8 +143,6 @@ export function resolveConfig(
         reconnect: raw.reconnect === undefined ? true : bool(raw.reconnect),
         sandbox: {
             kind: sandbox,
-            apiKey: sandbox === 'e2b' ? env.E2B_API_KEY : undefined,
-            template: raw.e2bTemplate ?? env.E2B_TEMPLATE,
             image: raw.dockerImage,
             memory: raw.dockerMemory,
             cpus: raw.dockerCpus,
@@ -196,7 +190,6 @@ export function toAgentOptions(config) {
     return {
         model: config.model,
         apiKey: config.apiKey,
-        modelsPath: config.modelsPath,
         thinkingLevel: config.thinking,
         vision: config.vision,
         tickRate: config.tickRate,

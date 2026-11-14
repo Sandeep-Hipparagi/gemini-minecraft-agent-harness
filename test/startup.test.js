@@ -67,7 +67,7 @@ test('reconnect backoff grows and is bounded', () => {
     assert.ok(MAX_RECONNECTS >= 5);
 });
 
-function fakeSdk({ providers = ['anthropic'], models = { anthropic: ['claude-sonnet-4-6'] }, auth = [] } = {}) {
+function fakeSdk({ providers = ['google'], models = { google: ['gemini-2.5-flash'] }, auth = [] } = {}) {
     return {
         ModelRuntime: {
             create: async () => ({
@@ -80,26 +80,32 @@ function fakeSdk({ providers = ['anthropic'], models = { anthropic: ['claude-son
 }
 
 test('model preflight names the missing key, unknown models and unknown providers', async () => {
-    const base = { model: { provider: 'anthropic', id: 'claude-sonnet-4-6' } };
-    assert.match(await checkModel(base, { sdk: fakeSdk() }), /No API key for anthropic\. Set ANTHROPIC_API_KEY/);
-    assert.equal(await checkModel(base, { sdk: fakeSdk({ auth: ['anthropic'] }) }), null);
-    assert.match(
-        await checkModel({ model: { provider: 'anthropic', id: 'nope' } }, { sdk: fakeSdk({ auth: ['anthropic'] }) }),
-        /Unknown model anthropic\/nope/,
-    );
-    assert.match(
-        await checkModel({ model: { provider: 'zzz', id: 'x' } }, { sdk: fakeSdk() }),
-        /Unknown provider "zzz"/,
-    );
+    const origKey = process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    try {
+        const base = { model: { provider: 'google', id: 'gemini-2.5-flash' } };
+        assert.match(await checkModel(base, { sdk: fakeSdk() }), /No API key for google\. Set GEMINI_API_KEY/);
+        assert.equal(await checkModel(base, { sdk: fakeSdk({ auth: ['google'] }) }), null);
+        assert.match(
+            await checkModel({ model: { provider: 'google', id: 'nope' } }, { sdk: fakeSdk({ auth: ['google'] }) }),
+            /Unknown model google\/nope/,
+        );
+        assert.match(
+            await checkModel({ model: { provider: 'zzz', id: 'x' } }, { sdk: fakeSdk() }),
+            /Unknown provider "zzz"/,
+        );
+    } finally {
+        if (origKey !== undefined) process.env.GEMINI_API_KEY = origKey;
+    }
 });
 
 test('single agents keep their own mailbox and plan; teams share them', () => {
     const solo = toSettings(resolveConfig([{ objective: 'x', name: 'Ada' }], { env: {}, probeDocker: () => false }));
-    assert.match(solo.profile.pi.mailboxPath, /Ada\/mailbox\.sqlite$/);
-    assert.match(solo.profile.pi.planPath, /Ada\/plan\.md$/);
+    assert.match(solo.profile.pi.mailboxPath, /Ada[\\/]mailbox\.sqlite$/);
+    assert.match(solo.profile.pi.planPath, /Ada[\\/]plan\.md$/);
     const team = toSettings({
         ...resolveConfig([{ objective: 'x', name: 'Ada' }], { env: {}, probeDocker: () => false }),
         team: true,
     });
-    assert.match(team.profile.pi.mailboxPath, /shared\/mailbox\.sqlite$/);
+    assert.match(team.profile.pi.mailboxPath, /shared[\\/]mailbox\.sqlite$/);
 });

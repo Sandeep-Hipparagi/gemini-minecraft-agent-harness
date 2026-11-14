@@ -52,56 +52,31 @@ good.
 
 ## Model
 
-| Flag            | Env                 | Config key   | Default                |
-| --------------- | ------------------- | ------------ | ---------------------- |
-| `--model`       | `AGENT_MODEL`       | `model`      | `openai/gpt-6.1-terra` |
-| `--thinking`    | `AGENT_THINKING`    | `thinking`   | `medium`               |
-| `--base-url`    | `MODEL_BASE_URL`    | `baseUrl`    | none                   |
-| `--models-file` | `AGENT_MODELS_FILE` | `modelsFile` | none                   |
+| Flag         | Env                           | Config key | Default                   |
+| ------------ | ----------------------------- | ---------- | ------------------------- |
+| `--model`    | `GEMINI_MODEL`, `AGENT_MODEL` | `model`    | `google/gemini-2.5-flash` |
+| `--thinking` | `AGENT_THINKING`              | `thinking` | `medium`                  |
 
-`--model` takes `provider/model-id` from pi's model catalog. List what is available with:
+`--model` takes a Gemini model id (e.g. `gemini-2.5-flash`, `gemini-2.5-pro` or `google/gemini-2.5-flash`). List what is available with:
 
 ```sh
-npx minecraft-agent models anthropic
-npx minecraft-agent models openai
+npx minecraft-agent models
 ```
 
-Keys come from the provider's usual environment variable:
+Credentials are provided via `GEMINI_API_KEY`:
 
-| Provider                                         | Variable                                                                                                   | Example model                                |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| Anthropic                                        | `ANTHROPIC_API_KEY`                                                                                        | `anthropic/claude-sonnet-4-6`                |
-| OpenAI                                           | `OPENAI_API_KEY`                                                                                           | `openai/gpt-6.1-terra`                       |
-| Google                                           | `GEMINI_API_KEY`                                                                                           | `google/gemini-3.1-pro-preview`              |
-| OpenRouter                                       | `OPENROUTER_API_KEY`                                                                                       | `openrouter/~anthropic/claude-sonnet-latest` |
-| Groq, Mistral, DeepSeek, xAI, Bedrock and others | see [pi providers](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md) |                                              |
-
-### OpenAI Responses compatible endpoints
-
-For a LiteLLM proxy, vLLM, or an internal gateway that speaks the OpenAI Responses API:
-
-```sh
-MODEL_API_KEY=... npx minecraft-agent --base-url https://gateway.example.com/v1 --model gateway/my-model -o "..."
-```
-
-The part before the slash names the provider; the rest is sent as the model id. The key in `MODEL_API_KEY` is sent as a
-bearer token. In a config file you can also set `apiKeyHeader` (for gateways that expect a header such as `api-key`),
-`serviceTier`, and `requestTimeoutMs`.
-
-### Custom providers
-
-Anything pi can describe in a `models.json` (Ollama, LM Studio, other local servers) works through `--models-file`. See
-pi's [custom provider docs](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/custom-provider.md).
+| Provider | Variable         | Example model             |
+| -------- | ---------------- | ------------------------- |
+| Google   | `GEMINI_API_KEY` | `google/gemini-2.5-flash` |
 
 ## Sandbox
 
-| Flag             | Env                   | Config key     | Default                                                          |
-| ---------------- | --------------------- | -------------- | ---------------------------------------------------------------- |
-| `--sandbox`      | `AGENT_SANDBOX`       | `sandbox`      | `e2b` with `E2B_API_KEY`, else `docker` if running, else `local` |
-| `--docker-image` | `AGENT_DOCKER_IMAGE`  | `dockerImage`  | `node:22-bookworm`                                               |
-|                  | `AGENT_DOCKER_MEMORY` | `dockerMemory` | `2g`                                                             |
-|                  | `AGENT_DOCKER_CPUS`   | `dockerCpus`   | `2`                                                              |
-|                  | `E2B_TEMPLATE`        | `e2bTemplate`  | E2B base image                                                   |
+| Flag             | Env                   | Config key     | Default                                     |
+| ---------------- | --------------------- | -------------- | ------------------------------------------- |
+| `--sandbox`      | `AGENT_SANDBOX`       | `sandbox`      | `docker` if Docker is running, else `local` |
+| `--docker-image` | `AGENT_DOCKER_IMAGE`  | `dockerImage`  | `node:22-bookworm`                          |
+|                  | `AGENT_DOCKER_MEMORY` | `dockerMemory` | `2g`                                        |
+|                  | `AGENT_DOCKER_CPUS`   | `dockerCpus`   | `2`                                         |
 
 The startup line prints which sandbox was picked, for example `(sandbox: docker)`.
 
@@ -113,32 +88,10 @@ The startup line prints which sandbox was picked, for example `(sandbox: docker)
   `node`, `python3` and `curl` works; build your own on top of `node:22-bookworm` to preinstall packages. Remove a
   container with `docker rm -f minecraft-agent-<name>-<hash>` (list them with
   `docker ps -a --filter label=minecraft-agent-harness`).
-- `e2b` gives each agent its own cloud VM (needs `E2B_API_KEY`). It pauses after a few idle minutes and resumes on the
-  next command with files and processes intact. When the agent stops, the VM is paused rather than deleted, and its id
-  is saved in `.agent-state/<name>/e2b-sandbox.json`; the next run resumes the same VM, so files and installed packages
-  survive restarts. The VM is also created to pause (not die) when its timeout passes. If the saved VM is gone the agent
-  logs it and starts a new one. Delete `e2b-sandbox.json` to start fresh, and remove old paused VMs from the E2B
-  dashboard or CLI.
 - `local` runs commands with `bash` in `.agent-state/<name>/workspace/shell-home` on the machine running the agent.
-  It is not isolated; it is the fallback when neither E2B nor Docker is available. Inside the Compose setup the agent
+  It is not isolated; it is the fallback when Docker is not available. Inside the Compose setup the agent
   itself runs in a container, so `local` is contained there.
 - `none` removes `run_shell`. The agent still has its private workspace and `compute_js`.
-
-## Vision
-
-`--vision` (or `AGENT_VISION=1`) attaches a first-person render to every observation. The renderer needs extra native
-packages that are not installed by default:
-
-```sh
-npm run vision:install
-```
-
-On a headless Linux host, run the agent under a virtual display, for example
-`xvfb-run -a -s "-screen 0 1024x768x24" npx minecraft-agent --vision ...`. Pick a model that accepts images.
-
-Vision is experimental. `node-canvas-webgl` pulls in `gl@6`, which builds from source and needs Python, a C++
-toolchain and the GL and Cairo development headers. With recent GCC releases the build can fail on Node 24; text
-perception works without it.
 
 ## Files written
 
@@ -155,7 +108,6 @@ Everything lives under `--state-dir` (default `.agent-state/`):
     runtime-status.json   position, health and current action, refreshed every 3 seconds
     mailbox.sqlite        whispers and public chat this agent saw (single-agent mode)
     plan.md               the agent's noticeboard (single-agent mode)
-    e2b-sandbox.json      id of the agent's E2B VM, resumed on the next run
   shared/
     mailbox.sqlite        DMs between team members (team mode)
 ```

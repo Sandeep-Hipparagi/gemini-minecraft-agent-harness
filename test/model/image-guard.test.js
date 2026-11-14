@@ -4,7 +4,6 @@ import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
-import { convertResponsesMessages } from '@earendil-works/pi-ai/api/openai-responses-shared';
 import { validateImage, sanitizeImages, isImageRejection, redactPayloads } from '../../src/model/image-guard.js';
 import { createMinecraftSession, createPiSession } from '../../src/model/session.js';
 
@@ -81,9 +80,9 @@ function harness({ rejectAnyImage = false, alwaysError = null } = {}) {
     const assistant = (content, extra = {}) => ({
         role: 'assistant',
         content,
-        api: 'openai-responses',
-        provider: 'gateway',
-        model: 'vendor/test-model',
+        api: 'google-generative-ai',
+        provider: 'google',
+        model: 'gemini-2.5-flash',
         usage: {
             input: 0,
             output: 0,
@@ -96,39 +95,34 @@ function harness({ rejectAnyImage = false, alwaysError = null } = {}) {
         timestamp: Date.now(),
         ...extra,
     });
-    const responses = {
-        stream(model, context) {
-            const items = convertResponsesMessages(model, context, new Set([model.provider]));
-            const toolImages = items.filter(
-                i =>
-                    i.type === 'function_call_output' &&
-                    Array.isArray(i.output) &&
-                    i.output.some(o => o.type === 'input_image'),
-            ).length;
-            const userImages = items
-                .filter(i => i.role === 'user')
-                .flatMap(i => i.content)
-                .filter(c => c.type === 'input_image').length;
-            requests.push({ toolImages, userImages, items: items.length });
-            const s = createAssistantMessageEventStream();
-            queueMicrotask(() => {
-                let msg;
-                if (alwaysError) msg = assistant([], { stopReason: 'error', errorMessage: alwaysError });
-                else if (toolImages || (rejectAnyImage && userImages))
-                    msg = assistant([], { stopReason: 'error', errorMessage: REAL_400 });
-                else if (!context.messages.some(m => m.role === 'toolResult'))
-                    msg = assistant(
-                        [{ type: 'toolCall', id: 'call_1|fc_1', name: 'look_tool', arguments: { image: true } }],
-                        { stopReason: 'toolUse' },
-                    );
-                else msg = assistant([{ type: 'text', text: 'Built a wall.' }]);
-                s.push({ type: 'start', partial: msg });
-                if (msg.stopReason === 'error') s.push({ type: 'error', reason: 'error', error: msg });
-                else s.push({ type: 'done', reason: msg.stopReason, message: msg });
-                s.end?.();
-            });
-            return s;
-        },
+    const streamSimple = (model, context) => {
+        const toolImages = (context.messages ?? [])
+            .filter(m => m.role === 'toolResult')
+            .flatMap(m => m.content ?? [])
+            .filter(c => c.type === 'image').length;
+        const userImages = (context.messages ?? [])
+            .filter(m => m.role === 'user')
+            .flatMap(m => m.content ?? [])
+            .filter(c => c.type === 'image').length;
+        requests.push({ toolImages, userImages, items: context.messages.length });
+        const s = createAssistantMessageEventStream();
+        queueMicrotask(() => {
+            let msg;
+            if (alwaysError) msg = assistant([], { stopReason: 'error', errorMessage: alwaysError });
+            else if (toolImages || (rejectAnyImage && userImages))
+                msg = assistant([], { stopReason: 'error', errorMessage: REAL_400 });
+            else if (!context.messages.some(m => m.role === 'toolResult'))
+                msg = assistant(
+                    [{ type: 'toolCall', id: 'call_1|fc_1', name: 'look_tool', arguments: { image: true } }],
+                    { stopReason: 'toolUse' },
+                );
+            else msg = assistant([{ type: 'text', text: 'Built a wall.' }]);
+            s.push({ type: 'start', partial: msg });
+            if (msg.stopReason === 'error') s.push({ type: 'error', reason: 'error', error: msg });
+            else s.push({ type: 'done', reason: msg.stopReason, message: msg });
+            s.end?.();
+        });
+        return s;
     };
     const dir = mkdtempSync(join(tmpdir(), 'img400-'));
     const cycles = [],
@@ -149,19 +143,15 @@ function harness({ rejectAnyImage = false, alwaysError = null } = {}) {
                 systemPrompt: 'You are a test agent.',
                 apiKey: 'test',
                 model: {
-                    provider: 'gateway',
-                    id: 'vendor/test-model',
-                    name: 'Test Model',
-                    input: ['text', 'image'],
-                    baseUrl: 'http://127.0.0.1:9',
-                    serviceTier: undefined,
+                    provider: 'google',
+                    id: 'gemini-2.5-flash',
                 },
                 tools: [tool],
                 observe: async () => ({ text: '{}', images: [img()] }),
                 cycleTelemetry: e => cycles.push(e),
                 diagnostics: e => diags.push(e),
             },
-            { createSession: options => createPiSession(options, { responses }) },
+            { createSession: options => createPiSession(options, { streamSimple }) },
         );
     const transcript = () => {
         const d = join(dir, 's', 'T');

@@ -219,6 +219,36 @@
       }
     },
     {
+      "name": "find_and_collect_nearest",
+      "label": "find and collect nearest",
+      "description": "Find the nearest block of a given type within range, navigate to it, mine it with the appropriate tool, and collect the resulting item drops.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "block": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9_]+$"
+          },
+          "max_distance": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120000
+          }
+        },
+        "required": [
+          "block"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "return_to_surface",
       "label": "return to surface",
       "description": "Get back up to ground level from a hole, pit, shaft or cave. Works out the ground height around you, then walks, digs or climbs to the nearest spot at that height under open sky (it may dig natural blocks such as stone and dirt and place dirt/cobblestone to climb). Never breaks planks, bricks, glass or other built blocks. Does nothing if you are already at ground level.",
@@ -1457,6 +1487,36 @@
       }
     },
     {
+      "name": "find_and_collect_nearest",
+      "label": "find and collect nearest",
+      "description": "Find the nearest block of a given type within range, navigate to it, mine it with the appropriate tool, and collect the resulting item drops.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "block": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9_]+$"
+          },
+          "max_distance": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120000
+          }
+        },
+        "required": [
+          "block"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "return_to_surface",
       "label": "return to surface",
       "description": "Get back up to ground level from a hole, pit, shaft or cave. Works out the ground height around you, then walks, digs or climbs to the nearest spot at that height under open sky (it may dig natural blocks such as stone and dirt and place dirt/cobblestone to climb). Never breaks planks, bricks, glass or other built blocks. Does nothing if you are already at ground level.",
@@ -2690,6 +2750,36 @@
         "required": [
           "block",
           "count"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "find_and_collect_nearest",
+      "label": "find and collect nearest",
+      "description": "Find the nearest block of a given type within range, navigate to it, mine it with the appropriate tool, and collect the resulting item drops.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "block": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9_]+$"
+          },
+          "max_distance": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120000
+          }
+        },
+        "required": [
+          "block"
         ],
         "additionalProperties": false
       }

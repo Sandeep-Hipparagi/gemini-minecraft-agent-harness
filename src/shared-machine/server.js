@@ -76,7 +76,11 @@ export function serveSharedMachine({ socketPath, run, concurrency = 4 }) {
     return new Promise((resolve, reject) => {
         server.once('error', reject);
         server.listen(socketPath, () => {
-            fs.chmodSync(socketPath, 0o660);
+            if (process.platform !== 'win32') {
+                try {
+                    fs.chmodSync(socketPath, 0o660);
+                } catch {}
+            }
             resolve(server);
         });
     });

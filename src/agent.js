@@ -4,7 +4,6 @@ import { installOxygenIsolation } from './body/oxygen.js';
 import { installDamageTypes, causeLabel, formatHitAlert } from './body/hurt-cause.js';
 import { installDifficulty, currentDifficulty } from './body/difficulty.js';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { readFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { initBot } from './body/bot.js';
 import * as skills from './skills/skills.js';
@@ -27,7 +26,7 @@ import { createDirectoryTools } from './tools/directory-tools.js';
 import { createShellTools } from './tools/shell-tools.js';
 import { loadToolsModule } from './tools/extra-tools.js';
 import { createSharedExecTool } from './tools/shared-exec.js';
-import { createE2bBackend, createLocalBackend } from './sandbox/shell-sandbox.js';
+import { createLocalBackend } from './sandbox/shell-sandbox.js';
 import { createDockerBackend } from './sandbox/docker.js';
 import { createMinecraftSession } from './model/session.js';
 import { paceBot } from './body/tickpace.js';
@@ -81,7 +80,6 @@ export async function startAgent(settings, options = {}) {
             { mode: 0o600 },
         );
     let runner,
-        camera,
         mailbox,
         closing = false,
         status = 'starting';
@@ -144,7 +142,6 @@ export async function startAgent(settings, options = {}) {
         try {
             await actionRunner.stop();
             await runner?.close();
-            await camera?.close();
             pacer.close();
             for (const t of shellTools) await t.close?.();
         } catch {
@@ -413,37 +410,12 @@ export async function startAgent(settings, options = {}) {
         });
         bot.on('diggingCompleted', block => record('dig', { block: block.name, position: block.position }));
         bot.on('blockPlaced', (_old, block) => record('place', { block: block.name, position: block.position }));
-        const { Camera } = withImages ? await import('./vision/camera.js') : {};
-        if (withImages)
-            camera = new Camera(bot, path.join(root, 'frames'), {
-                viewDistance: 3,
-                width: 640,
-                height: 416,
-                timeoutMs: 20000,
-            });
-        let lastFrame;
-        const captureFrame = async ({ signal }) => {
-            signal?.throwIfAborted();
-            const t0 = Date.now();
-            const file = `${await camera.capture()}.jpg`;
-            const filePath = path.join(camera.fp, file);
-            const data = await readFile(filePath);
-            signal?.throwIfAborted();
-            if (lastFrame && lastFrame !== filePath) await unlink(lastFrame).catch(() => {});
-            lastFrame = filePath;
-            record('frame', { captureMs: Date.now() - t0, bytes: data.length });
-            return {
-                data: data.toString('base64'),
-                mimeType: 'image/jpeg',
-                ...camera.metadata,
-                capturedAt: new Date().toISOString(),
-            };
-        };
+        if (withImages) throw new Error('Vision is not supported in this minimal harness.');
         const observeWorld = createObservation({
             bot,
             perception,
             world,
-            captureFrame: withImages ? captureFrame : undefined,
+            captureFrame: undefined,
             mailbox,
         });
         let hitInfoAt = -Infinity;
@@ -545,30 +517,19 @@ export async function startAgent(settings, options = {}) {
         const sandbox = options.sandbox ?? { kind: 'none' };
         if (sandbox.kind !== 'none') {
             const backend =
-                sandbox.kind === 'e2b'
-                    ? createE2bBackend({
-                          apiKey: sandbox.apiKey,
-                          template: sandbox.template || undefined,
+                sandbox.kind === 'docker'
+                    ? createDockerBackend({
                           agentName: name,
-                          cohort: options.cohort,
+                          workdir: path.join(root, 'workspace', 'shell-home'),
                           sharedDir: c.sharedRoot,
-                          privateDir: path.join(root, 'workspace', 'shell-bin'),
-                          statePath: path.join(root, 'e2b-sandbox.json'),
-                          sandboxTimeoutMs: 3 * 3600000,
+                          image: sandbox.image || undefined,
+                          memory: sandbox.memory || undefined,
+                          cpus: sandbox.cpus || undefined,
                       })
-                    : sandbox.kind === 'docker'
-                      ? createDockerBackend({
-                            agentName: name,
-                            workdir: path.join(root, 'workspace', 'shell-home'),
-                            sharedDir: c.sharedRoot,
-                            image: sandbox.image || undefined,
-                            memory: sandbox.memory || undefined,
-                            cpus: sandbox.cpus || undefined,
-                        })
-                      : createLocalBackend({
-                            workdir: path.join(root, 'workspace', 'shell-home'),
-                            sharedDir: c.sharedRoot,
-                        });
+                    : createLocalBackend({
+                          workdir: path.join(root, 'workspace', 'shell-home'),
+                          sharedDir: c.sharedRoot,
+                      });
             shellTools = createShellTools({
                 backend,
                 invoke: (n, a) => runner.invokeTool(n, a),
@@ -621,7 +582,6 @@ export async function startAgent(settings, options = {}) {
             systemPrompt: prompt,
             apiKey,
             model,
-            modelsPath: options.modelsPath,
             thinkingLevel: options.thinkingLevel,
             resumeThinkingLevel: 'minimal',
             reconnected: reconnecting,

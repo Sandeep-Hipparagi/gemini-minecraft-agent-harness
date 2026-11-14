@@ -2,6 +2,8 @@ const codes = new Set([
     'validation',
     'cancellation',
     'timeout',
+    'aborted',
+    'timed_out',
     'not_visible_or_range',
     'occupied_target',
     'missing_item',

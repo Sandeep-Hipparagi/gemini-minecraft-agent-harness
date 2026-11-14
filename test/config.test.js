@@ -1,12 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { defaultSandbox, resolveConfig } from '../src/config.js';
+import { defaultSandbox, resolveConfig, parseModelRef } from '../src/config.js';
 
-test('default sandbox prefers e2b with a key, then docker, then local', () => {
-    assert.equal(
-        defaultSandbox({ E2B_API_KEY: 'k' }, () => true),
-        'e2b',
-    );
+test('default sandbox prefers docker when available, then local', () => {
     assert.equal(
         defaultSandbox({}, () => true),
         'docker',
@@ -30,6 +26,18 @@ test('explicit sandbox and docker settings flow into the resolved config', () =>
 test('unknown sandbox kinds are rejected', () => {
     assert.throws(
         () => resolveConfig([{ objective: 'x', sandbox: 'vm' }], { env: {}, probeDocker: () => false }),
-        /sandbox must be one of none, local, docker, e2b/,
+        /sandbox must be one of none, local, docker/,
+    );
+});
+
+test('Gemini model names are parsed with google provider defaulted', () => {
+    assert.deepEqual(parseModelRef('gemini-2.5-flash'), { provider: 'google', id: 'gemini-2.5-flash' });
+    assert.deepEqual(parseModelRef('google/gemini-2.5-pro'), { provider: 'google', id: 'gemini-2.5-pro' });
+});
+
+test('non-Gemini model providers are rejected', () => {
+    assert.throws(
+        () => resolveConfig([{ objective: 'x', model: 'openai/gpt-4o' }], { env: {}, probeDocker: () => false }),
+        /Only Google Gemini models are supported/,
     );
 });

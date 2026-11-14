@@ -1,12 +1,12 @@
-<h1 align="center">minecraft-agent-harness</h1>
+<h1 align="center">gemini-minecraft-agent-harness</h1>
 
-<p align="center">LLM agents that play Minecraft.</p>
+<p align="center">Autonomous Google Gemini agents that play Minecraft.</p>
 
 <p align="center">
-  <a href="https://github.com/yc-software/minecraft-agent-harness/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/yc-software/minecraft-agent-harness/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <img alt="Node.js 22.19+" src="https://img.shields.io/badge/node-%E2%89%A522.19-339933?logo=node.js&logoColor=white">
   <img alt="Minecraft Java 1.21.6" src="https://img.shields.io/badge/minecraft-java%201.21.6-62B47A">
+  <img alt="Google Gemini" src="https://img.shields.io/badge/model-Google%20Gemini-4285F4?logo=google&logoColor=white">
 </p>
 
 <p align="center">
@@ -18,108 +18,144 @@
   <a href="docs/configuration.md">Configuration</a> ·
   <a href="docs/tools.md">Tools</a> ·
   <a href="docs/multi-agent.md">Teams</a> ·
-  <a href="examples/bedwars/README.md">Bed Wars example</a>
+  <a href="#telemetry--benchmarking">Benchmarking</a> ·
+  <a href="examples/bedwars/README.md">Bed Wars</a>
 </p>
 
-Point an LLM at a Minecraft server and give it something to do. It plays through
-[Mineflayer](https://github.com/PrismarineJS/mineflayer), so it walks, mines, crafts, builds, fights and chats like a
-regular player. [pi](https://github.com/earendil-works/pi) handles the model session. We've run Bed Wars matches with it,
-and a survival server with 50 agents on it at once.
+**gemini-minecraft-agent-harness** runs autonomous AI agents powered natively by Google Gemini (`gemini-2.5-flash` and `gemini-2.5-pro`) on Minecraft Java Edition servers. Agents interact through [Mineflayer](https://github.com/PrismarineJS/mineflayer) and manage persistent reasoning sessions using [@earendil-works/pi-coding-agent](https://github.com/earendil-works/pi).
 
-What's in here:
+### Key Features
 
-- Claude, GPT, Gemini, OpenRouter, or your own endpoint if it speaks the OpenAI Responses API
-- Sessions that survive restarts. Kill an agent, start it again under the same name, and it carries on
-- A shell for every agent (Docker, E2B or a plain local folder). Agents keep notes there and write little scripts that
-  call their own game tools
-- Teams from a single JSON file, with DMs between agents and an optional shared machine
-- Vision, if you want it (experimental)
+- **Native Google Gemini**: Built for `google/gemini-2.5-flash` (low-latency execution) and `google/gemini-2.5-pro` (high-reasoning coordination), with configurable thinking budgets.
+- **Robust Action Runner**: Every Mineflayer body tool observes an `AbortSignal`, guarantees clean world-action drain before settling, and emits structured `withFailureCode` classifications.
+- **Persistent Sessions**: Sessions survive restarts. Stopping an agent and re-launching under the same name immediately restores state, notes, and context from `.agent-state/<name>/`.
+- **Integrated Tool Shell**: Each agent gets a persistent sandbox (Docker or local workspace) equipped with an HTTP tool relay so agents can script complex loops using `tool <name> '<json>'`.
+- **Multi-Agent Teams**: Coordinate asymmetric crews from a single JSON configuration with direct-message mailboxes, shared blueprints, and non-blocking directory lookups.
+- **Built-In Benchmarking Suite**: Automated telemetry streaming, timed benchmark runners, and side-by-side A/B diff tooling (`npm run telemetry`, `npm run benchmark`, `npm run compare`).
+
+---
 
 ## Quickstart
 
-You'll need Node 22.19+, an API key for some model provider, and a Minecraft server. If you don't have a server, the
-repo comes with a dev one, which needs Java 21.
+### Prerequisites
+
+- Node.js 22.19 or newer
+- Java 21 (for the bundled Paper development server)
+- A Google Gemini API key ([Google AI Studio](https://aistudio.google.com/))
+
+### 1. Setup & Environment
 
 ```sh
 npm ci
-cp .env.example .env    # add the API key for your model provider
-npm run server          # Paper 1.21.6 on localhost:25565, offline mode
+cp .env.example .env
 ```
 
-Then in a second terminal:
+Add your Gemini API key to `.env`:
+
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+```
+
+### 2. Start the Local Server
+
+Launch the preconfigured local PaperMC development server (sets `spawn-protection=0`, `online-mode=false`, and multi-agent memory limits):
 
 ```sh
-npm start -- --objective "Gather wood and build a small shelter near spawn"
+npm run server
 ```
 
-That's it. The default model is GPT-6.1 Terra, and [Configuration](docs/configuration.md#model) covers the other providers
-and how to switch.
+### 3. Run an Agent
 
-Join `localhost:25565` from Minecraft 1.21.6 if you want to watch, and `/tell Agent <message>` to talk to it. Its
-output and tool calls stream to the terminal. `Ctrl+C` stops it. Everything it knows lives in
-`.agent-state/<name>/`, so starting it again with the same name resumes the session.
-
-### Your own server
+In a separate terminal, launch an agent:
 
 ```sh
-npm start -- --host play.example.net --port 25565 --objective "Mine iron"
+npm start -- --objective "Gather wood, craft basic tools, and build a shelter near spawn"
 ```
 
-Online-mode servers need `--auth microsoft` (you'll get a sign-in prompt). Agents assume survival; pass `--game-mode`
-if your server puts them in something else.
+The agent connects, explores the spawn area, and streams its thoughts and tool calls to your console. Press `Ctrl+C` to gracefully pause execution.
 
-### Docker
+---
 
-Fill in `.env` as above, then:
+## Multi-Agent Teams
+
+Coordinate multiple Gemini agents working toward shared objectives:
 
 ```sh
-docker compose up
+# Launch the asymmetric Pro coordinator + Flash workers crew
+npm run team -- --team examples/team.json
+
+# Launch the homogeneous All-Flash crew
+npm run team -- --team examples/team-flash.json
 ```
 
-You get a Paper server on `localhost:25565` and one agent. Change what it does with `AGENT_OBJECTIVE` in `.env`. State
-goes in the `agent-state` volume.
+- **Coordinator** (`ArchitectPro`): Runs `gemini-2.5-pro` with `"thinking": "high"`, surveying the world, writing plans to the shared workspace, and dispatching tasks over DMs.
+- **Workers** (`GathererFlash`, `BuilderFlash`): Run `gemini-2.5-flash` with `"thinking": "low"` for rapid harvesting and construction.
 
-Already have a server? Just run the agent image:
+---
+
+## Telemetry & Benchmarking
+
+The harness includes zero-dependency tools for telemetry analysis, automated benchmark runs, and A/B performance comparison.
+
+### Telemetry Summary
+
+Stream `.agent-state/<name>/telemetry.jsonl` into console tables and export JSON reports:
 
 ```sh
-docker build -t minecraft-agent .
-docker run --rm -it --env-file .env -v agent-state:/data minecraft-agent --host play.example.net -o "Mine iron"
+# Single-agent summary
+npm run telemetry -- GeminiBot --out reports/single.json
+
+# Cross-agent team summary
+npm run telemetry -- gemini-crew --out reports/team.json
 ```
 
-### Teams
+### Timed Multi-Agent Benchmarks
+
+Execute fixed-duration multi-agent runs that terminate cleanly and persist results:
 
 ```sh
-npm start -- team examples/team.json
+# Run a 3-minute benchmark starting from a clean state
+npm run benchmark -- --team examples/team.json --duration 180 --clean --out benchmarks/pro-flash.json
+npm run benchmark -- --team examples/team-flash.json --duration 180 --clean --out benchmarks/all-flash.json
 ```
 
-Starts three agents who can message each other. [Team config](docs/multi-agent.md) has the details. For
-something with rules and a referee, look at the [Bed Wars example](examples/bedwars/README.md).
+### A/B Comparison Diff
 
-## Configuration
-
-Flags, environment variables (`.env` works) or a JSON file via `--config`. Flags win over env vars, env vars win over
-the file.
-
-A heads-up about the shell: agents get one by default. That's E2B if `E2B_API_KEY` is set, otherwise Docker if it's
-running, otherwise a local folder, and local means commands run as you. Use `--sandbox none` if you'd rather they
-didn't have one.
-
-More docs:
-
-- [Configuration](docs/configuration.md): models, auth, sandboxes, vision, where files go
-- [Tools](docs/tools.md): everything an agent can do
-- [Architecture](docs/architecture.md): how the code fits together
-
-## Development
+Compare two benchmark JSON reports to see side-by-side deltas in calls, success rates, latencies, and failure codes:
 
 ```sh
-npm run check   # lint, format, tests
+npm run compare -- benchmarks/pro-flash.json benchmarks/all-flash.json --out benchmarks/diff.json
 ```
 
-[CONTRIBUTING.md](CONTRIBUTING.md) covers the rest.
+---
 
-## License
+## World-Action Tools
 
-MIT. Some of the skill library comes from [Mindcraft](https://github.com/kolbytn/mindcraft) and the renderer worker
-from [prismarine-viewer](https://github.com/PrismarineJS/prismarine-viewer); their licenses are in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+In addition to standard navigation and placement tools, the harness provides optimized compound actions such as `find_and_collect_nearest`:
+
+- **Single-Step Harvesting**: Locates the nearest target block, computes reachable pathing, harvests with the optimal tool, and collects item drops.
+- **Structured Failure Codes**: Yields actionable, machine-readable failure reasons (`not_found`, `no_path`, `missing_item`, `cancelled`).
+- **Prompt Guidance**: The Gemini system prompt guides agents to prioritize compound tools for efficient resource gathering.
+
+See [docs/tools.md](docs/tools.md) for the full tool reference.
+
+---
+
+## Development & Testing
+
+```sh
+npm run lint          # ESLint checks
+npm run format:check  # Prettier formatting verification
+npm test              # node:test test suite
+npm run check         # Full verification gate (lint + format:check + test)
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and coding standards.
+
+---
+
+## Author & License
+
+Maintained by **Sandeep Hipparagi**.
+
+Licensed under the [MIT License](LICENSE). Third-party notices and upstream dependencies are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

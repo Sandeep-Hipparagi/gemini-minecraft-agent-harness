@@ -5,12 +5,12 @@ import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { resolveConfig, readConfigFile, fromEnv, DEFAULTS } from './config.js';
 import { EXIT, checkModel } from './startup.js';
-import { extraModelIds } from './model/extra-models.js';
 
 const BIN = fileURLToPath(new URL('../bin/minecraft-agent.js', import.meta.url));
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
 const RUN_OPTIONS = {
+    team: { type: 'string' },
     config: { type: 'string', short: 'c' },
     host: { type: 'string', short: 'H' },
     port: { type: 'string', short: 'p' },
@@ -20,8 +20,6 @@ const RUN_OPTIONS = {
     objective: { type: 'string', short: 'o' },
     'game-mode': { type: 'string' },
     model: { type: 'string', short: 'm' },
-    'base-url': { type: 'string' },
-    'models-file': { type: 'string' },
     thinking: { type: 'string' },
     sandbox: { type: 'string' },
     'docker-image': { type: 'string' },
@@ -50,8 +48,6 @@ const FLAG_TO_KEY = {
     objective: 'objective',
     'game-mode': 'gameMode',
     model: 'model',
-    'base-url': 'baseUrl',
-    'models-file': 'modelsFile',
     thinking: 'thinking',
     sandbox: 'sandbox',
     'docker-image': 'dockerImage',
@@ -66,12 +62,12 @@ const FLAG_TO_KEY = {
 };
 
 const HELP = `minecraft-agent ${pkg.version}
-Run a language-model agent on a Minecraft server.
+Run a Gemini language-model agent on a Minecraft server.
 
 Usage
   minecraft-agent [run] [options]      start one agent
   minecraft-agent team <team.json>     start several agents that share a machine
-  minecraft-agent models [provider]    list models for providers with a key set (--all for every provider)
+  minecraft-agent models               list available Gemini models
 
 Server
   -H, --host <host>          Minecraft server host            (MC_HOST, default ${DEFAULTS.host})
@@ -88,20 +84,16 @@ Agent
       --duration <minutes>   stop after this long             (default: run until stopped)
       --no-respawn           permanent death
       --allow-flight         let creative-mode agents fly
-      --vision               attach a first-person render to every turn (experimental, see docs)
       --tick-rate <tps>      server tick rate if it runs below 20
       --no-reconnect         exit instead of reconnecting after a kick or disconnect
   -q, --quiet                no per-tool activity lines on the console      (AGENT_QUIET)
 
 Model
-  -m, --model <p/id>         provider/model-id                (AGENT_MODEL, default ${DEFAULTS.model})
+  -m, --model <id>           Gemini model id or google/<id>   (GEMINI_MODEL / AGENT_MODEL, default ${DEFAULTS.model})
       --thinking <level>     off | minimal | low | medium | high | xhigh (default ${DEFAULTS.thinking})
-      --base-url <url>       OpenAI Responses compatible endpoint; key from MODEL_API_KEY
-      --models-file <path>   pi models.json with custom providers
 
 Sandbox
-      --sandbox <kind>       none | local | docker | e2b      (AGENT_SANDBOX; default e2b with E2B_API_KEY,
-                             else docker when Docker is running, else local)
+      --sandbox <kind>       none | local | docker            (AGENT_SANDBOX; default docker if Docker is running, else local)
       --docker-image <ref>   image for --sandbox docker       (AGENT_DOCKER_IMAGE, default node:22-bookworm)
       --state-dir <dir>      sessions, notes and logs         (AGENT_STATE_DIR, default ${DEFAULTS.stateDir})
 
@@ -111,7 +103,7 @@ Sandbox
 
 Examples
   minecraft-agent --objective "Build a small oak cabin next to spawn"
-  minecraft-agent -H play.example.net --auth microsoft -n Builder -m openai/gpt-5.5 -o "Mine iron and craft a full set of armor"
+  minecraft-agent -H localhost -n Builder -m gemini-2.5-flash -o "Mine iron and craft a full set of armor"
   minecraft-agent team examples/team.json
 `;
 
@@ -149,8 +141,8 @@ export async function main(argv = process.argv.slice(2)) {
         console.log(HELP);
         return EXIT.ok;
     }
-    if (command === 'models') return listModels(positionals[0], { all: values.all });
-    if (command === 'team') return runTeam(positionals[0] ?? values.config, cwd);
+    if (command === 'models') return listModels();
+    if (command === 'team') return runTeam(positionals[0] ?? values.team ?? values.config, cwd);
     let config;
     try {
         const file = values.config ? readConfigFile(path.resolve(cwd, values.config)) : {};
@@ -262,29 +254,17 @@ async function runWorker(config) {
     return EXIT.ok;
 }
 
-async function listModels(provider, { all = false } = {}) {
+async function listModels() {
     const { ModelRuntime } = await import('@earendil-works/pi-coding-agent');
-    const runtime = await ModelRuntime.create({ modelsPath: null, allowModelNetwork: false });
-    const known = runtime.getProviders().map(p => p.id);
-    if (provider && !known.includes(provider)) {
-        console.error(`minecraft-agent: unknown provider "${provider}". Known providers: ${known.join(', ')}`);
+    const runtime = await ModelRuntime.create({ allowModelNetwork: false });
+    const hasKey = Boolean(process.env.GEMINI_API_KEY) || runtime.hasConfiguredAuth('google');
+    const models = runtime.getModels('google');
+    if (!models.length) {
+        console.error('minecraft-agent: no Gemini models found in catalog.');
         return EXIT.error;
     }
-    const withKeys = known.filter(id => runtime.hasConfiguredAuth(id));
-    const providers = provider ? [provider] : all ? known : withKeys;
-    if (!providers.length) {
-        console.error(
-            'minecraft-agent: no provider keys found. Set one (for example OPENAI_API_KEY) in .env, or run "minecraft-agent models --all".',
-        );
-        return EXIT.error;
-    }
-    for (const id of providers) {
-        const models = runtime.getModels(id);
-        if (!models.length) continue;
-        console.log(`${id}${withKeys.includes(id) ? '' : ' (no key set)'}`);
-        for (const m of models) console.log(`  ${id}/${m.id}`);
-        for (const extra of extraModelIds(runtime, id)) console.log(`  ${id}/${extra}`);
-    }
+    console.log(`google${hasKey ? '' : ' (no GEMINI_API_KEY set)'}`);
+    for (const m of models) console.log(`  google/${m.id}`);
     return EXIT.ok;
 }
 
@@ -300,7 +280,12 @@ async function runTeam(file, cwd) {
         return 2;
     }
     const names = agents.map(a => a.name);
-    const stateDir = path.resolve(cwd, common.stateDir ?? fromEnv().stateDir ?? DEFAULTS.stateDir);
+    const stateDir = path.resolve(
+        cwd,
+        common.stateDir ??
+            fromEnv().stateDir ??
+            (typeof common.team === 'string' ? path.join(DEFAULTS.stateDir, common.team) : DEFAULTS.stateDir),
+    );
     mkdirSync(path.join(stateDir, 'shared'), { recursive: true, mode: 0o700 });
     const configs = agents.map(agent => ({
         ...common,
@@ -320,22 +305,16 @@ async function runTeam(file, cwd) {
     }
     let server = null;
     let sharedRoot = '/shared';
-    const socketPath = path.join(stateDir, 'shared-machine.sock');
+    const socketPath =
+        process.platform === 'win32'
+            ? `\\\\.\\pipe\\minecraft-agent-${path.basename(stateDir)}-shared-machine`
+            : path.join(stateDir, 'shared-machine.sock');
     if (sharedMachine === 'local') {
         const { startLocalSharedMachine } = await import('./shared-machine/local.js');
         sharedRoot = path.join(stateDir, 'shared-machine');
         server = await startLocalSharedMachine({ socketPath, root: sharedRoot, peers: names });
-    } else if (sharedMachine === 'e2b') {
-        const { startE2bSharedMachine } = await import('./shared-machine/e2b.js');
-        server = await startE2bSharedMachine({
-            socketPath,
-            statePath: path.join(stateDir, 'shared-machine.json'),
-            peers: names,
-            apiKey: process.env.E2B_API_KEY,
-            cohort: common.cohort ?? '',
-        });
     } else if (sharedMachine !== 'none') {
-        console.error('sharedMachine must be local, e2b or none');
+        console.error('sharedMachine must be local or none');
         return 2;
     }
     if (server) console.log(`[team] shared machine (${sharedMachine}) listening`);
@@ -360,7 +339,7 @@ async function runTeam(file, cwd) {
                         ? {
                               sharedMachineSocket: socketPath,
                               sharedMachinePath: sharedRoot,
-                              sharedMachineVm: sharedMachine === 'e2b',
+                              sharedMachineVm: false,
                           }
                         : {}),
                 },

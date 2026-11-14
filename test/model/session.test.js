@@ -398,11 +398,11 @@ test('bounded queue keeps latest keys, bad options rejected, telemetry exception
     await assert.rejects(fixture({ tools: [tool('same', () => {}), tool('same', () => {})] }), /duplicate/);
 });
 
-test('Pi factory uses verified APIs: native-only, compatible Responses endpoint with service tier, session-controlled thinking, persistence', async () => {
+test('Pi factory uses verified APIs: native-only, Gemini model with session-controlled thinking, persistence', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pi-session-contract-'));
     try {
         const calls = {};
-        const model = { id: 'test-model', maxTokens: 8192 };
+        const model = { id: 'gemini-2.5-flash', maxTokens: 65536, provider: 'google' };
         const sdk = {
             SettingsManager: {
                 inMemory: settings => {
@@ -414,13 +414,10 @@ test('Pi factory uses verified APIs: native-only, compatible Responses endpoint 
                 create: async config => {
                     calls.runtime = config;
                     return {
-                        registerProvider: (name, config) => {
-                            calls.provider = { name, config };
-                        },
                         setRuntimeApiKey: async (name, key) => {
                             calls.auth = { name, key };
                         },
-                        getModel: () => model,
+                        getModel: (provider, id) => (provider === 'google' && id === 'gemini-2.5-flash' ? model : null),
                     };
                 },
             },
@@ -451,37 +448,16 @@ test('Pi factory uses verified APIs: native-only, compatible Responses endpoint 
                 sessionDir: root,
                 systemPrompt: 'Only explicit rules',
                 tools: [native],
-                apiKey: 'SYNTHETIC',
+                apiKey: 'SYNTHETIC_KEY',
                 model: {
-                    provider: 'openai',
-                    id: 'test-model',
-                    baseUrl: 'https://api.openai.com/v1',
-                    serviceTier: 'priority',
+                    provider: 'google',
+                    id: 'gemini-2.5-flash',
                 },
             },
-            {
-                sdk,
-                responses: {
-                    stream: (...args) => {
-                        calls.stream = args;
-                        return 'synthetic stream';
-                    },
-                },
-            },
+            { sdk },
         );
-        assert.equal(calls.provider.name, 'openai');
-        assert.equal(calls.provider.config.api, 'openai-responses');
-        calls.provider.config.streamSimple(
-            model,
-            { messages: [] },
-            { apiKey: 'SYNTHETIC', reasoning: 'high', sessionId: 'stable', signal: 'signal' },
-        );
-        assert.equal(calls.stream[2].serviceTier, 'priority');
-        assert.equal(calls.stream[2].maxTokens, 8192);
-        assert.equal(calls.stream[2].reasoningEffort, undefined);
-        assert.equal(calls.stream[2].reasoning, 'high');
-        assert.equal(calls.stream[2].signal, 'signal');
-        assert.equal(calls.stream[2].sessionId, 'stable');
+        assert.equal(calls.auth.name, 'google');
+        assert.equal(calls.auth.key, 'SYNTHETIC_KEY');
         assert.equal(calls.session.noTools, 'builtin');
         assert.deepEqual(calls.session.tools, ['native']);
         assert.deepEqual(calls.session.customTools, [native]);
@@ -1208,7 +1184,7 @@ test('a thrown provider error reaches diagnostics and the fatal hook', async () 
         fatal = [];
     const f = await fixture({ diagnostics: d => diagnostics.push(d), onFatal: m => fatal.push(m) });
     f.fake.script = async () => {
-        throw new Error('No API key found for anthropic');
+        throw new Error('No API key found for google');
     };
     f.runner.start();
     await f.clock.advance();

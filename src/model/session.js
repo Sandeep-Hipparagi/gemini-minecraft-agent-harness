@@ -2,7 +2,6 @@ import { mkdir, chmod } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createSessionHistoryTool } from './session-history.js';
 import { failureCode } from '../tools/game-tools.js';
-import { findModel } from './extra-models.js';
 import { sanitizeImages, isImageRejection, redactPayloads } from './image-guard.js';
 
 export async function createMinecraftSession(options, dependencies = {}) {
@@ -25,13 +24,26 @@ export async function createPiSession(options, modules) {
     });
     const modelRuntime = await sdk.ModelRuntime.create({
         authPath: join(directory, 'auth.json'),
-        modelsPath: options.modelsPath ?? null,
+        modelsPath: null,
         allowModelNetwork: false,
     });
-    const m = options.model ?? {};
-    const model = m.baseUrl
-        ? await registerCompatibleModel(modelRuntime, m, options, modules)
-        : await resolveCatalogModel(modelRuntime, m, options);
+    if (modules?.streamSimple) {
+        modelRuntime.registerProvider('google', {
+            api: 'google-generative-ai',
+            baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+            models: [
+                {
+                    id: options.model?.id ?? 'gemini-2.5-flash',
+                    name: 'Gemini',
+                    maxTokens: 65536,
+                    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                    input: ['text', 'image'],
+                },
+            ],
+            streamSimple: modules.streamSimple,
+        });
+    }
+    const model = await resolveGeminiModel(modelRuntime, options.model ?? {}, options);
     const resourceLoader = new sdk.DefaultResourceLoader({
         cwd: options.cwd,
         agentDir: directory,
@@ -58,130 +70,17 @@ export async function createPiSession(options, modules) {
         tools: options.tools.map(tool => tool.name),
         customTools: options.tools,
     });
-    return { session, sessionManager, compatible: Boolean(m.baseUrl) };
+    return { session, sessionManager };
 }
 
-async function resolveCatalogModel(modelRuntime, m, options) {
-    if (!m.provider || !m.id)
-        throw new Error('Model must be given as <provider>/<model-id>, for example openai/gpt-6.1-terra');
-    if (options.apiKey) await modelRuntime.setRuntimeApiKey(m.provider, options.apiKey);
-    const model = findModel(modelRuntime, m.provider, m.id);
-    if (!model)
-        throw new Error(
-            `Unknown model ${m.provider}/${m.id}. Use a model from the pi catalog, a models.json entry, or set a base URL for an OpenAI Responses compatible endpoint.`,
-        );
+async function resolveGeminiModel(modelRuntime, m, options) {
+    const id = m.id || m.name || m;
+    if (!id || typeof id !== 'string') throw new Error('Gemini model id required');
+    const key = options.apiKey || process.env.GEMINI_API_KEY;
+    if (key) await modelRuntime.setRuntimeApiKey('google', key);
+    const model = modelRuntime.getModel('google', id);
+    if (!model) throw new Error(`Unknown Gemini model google/${id}. Run "minecraft-agent models" to list models.`);
     return model;
-}
-
-async function registerCompatibleModel(modelRuntime, m, options, modules) {
-    const responses = modules?.responses ?? (await import('@earendil-works/pi-ai/api/openai-responses'));
-    const provider = m.provider || 'custom';
-    modelRuntime.registerProvider(provider, {
-        api: 'openai-responses',
-        baseUrl: m.baseUrl,
-        models: [
-            {
-                contextWindow: m.contextWindow ?? 128000,
-                maxTokens: m.maxTokens ?? 8192,
-                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-                ...options.modelConfig,
-                thinkingLevelMap: { off: m.offEffort ?? 'low' },
-                id: m.id,
-                name: m.name ?? m.id,
-                reasoning: true,
-                input: m.input ?? ['text', 'image'],
-                api: 'openai-responses',
-            },
-        ],
-        streamSimple: (model, context, streamOptions) =>
-            responses.stream(model, context, {
-                ...streamOptions,
-                maxTokens: Math.min(streamOptions?.maxTokens ?? model.maxTokens, model.maxTokens),
-                ...(m.headers ? { headers: { ...streamOptions?.headers, ...m.headers } } : {}),
-                ...(m.serviceTier ? { serviceTier: m.serviceTier } : {}),
-                ...(m.requestTimeoutMs
-                    ? {
-                          signal: streamOptions?.signal
-                              ? AbortSignal.any([streamOptions.signal, AbortSignal.timeout(m.requestTimeoutMs)])
-                              : AbortSignal.timeout(m.requestTimeoutMs),
-                      }
-                    : {}),
-            }),
-    });
-    if (options.apiKey) await modelRuntime.setRuntimeApiKey(provider, options.apiKey);
-    const model = modelRuntime.getModel(provider, m.id);
-    if (!model) throw new Error('Model registration failed');
-    return model;
-}
-
-const BREAKPOINT_TYPES = new Set(['input_text', 'input_image', 'input_file']);
-function markParts(parts) {
-    if (!Array.isArray(parts) || !parts.length) return null;
-    const last = parts.at(-1);
-    if (!last || !BREAKPOINT_TYPES.has(last.type)) return null;
-    return [...parts.slice(0, -1), { ...last, prompt_cache_breakpoint: { mode: 'explicit' } }];
-}
-const TOOL_NOTE = '(tool results above)';
-export function anthropicPayload(payload) {
-    if (!payload || typeof payload !== 'object') return payload;
-    const strip = parts =>
-        Array.isArray(parts)
-            ? parts.map(p => {
-                  if (!p?.prompt_cache_breakpoint) return p;
-                  const { prompt_cache_breakpoint, ...rest } = p;
-                  return rest;
-              })
-            : parts;
-    const { prompt_cache_key, ...rest } = payload;
-    if (!Array.isArray(rest.input)) return rest;
-    const src = rest.input,
-        out = [];
-    let lastNote = -1;
-    for (let i = 0; i < src.length; i++) {
-        const it = src[i];
-        out.push(
-            it?.type === 'function_call_output'
-                ? { ...it, output: strip(it.output) }
-                : Array.isArray(it?.content)
-                  ? { ...it, content: strip(it.content) }
-                  : it,
-        );
-        if (it?.type === 'function_call_output' && src[i + 1]?.type !== 'function_call_output') {
-            out.push({ role: 'user', content: [{ type: 'input_text', text: TOOL_NOTE }] });
-            if (i + 1 < src.length) lastNote = out.length - 1;
-        }
-    }
-    if (lastNote >= 0)
-        out[lastNote] = {
-            role: 'user',
-            content: [{ type: 'input_text', text: TOOL_NOTE, cache_control: { type: 'ephemeral' } }],
-        };
-    return { ...rest, input: out };
-}
-export function markCacheBreakpoint(payload) {
-    const input = payload?.input;
-    if (!Array.isArray(input) || input.length < 2) return payload;
-    for (let i = input.length - 2; i >= 0; i--) {
-        const item = input[i];
-        let next = null;
-        if (item?.type === 'function_call_output') {
-            const parts = markParts(
-                typeof item.output === 'string' ? [{ type: 'input_text', text: item.output }] : item.output,
-            );
-            if (parts) next = { ...item, output: parts };
-        } else if (item?.role === 'user' || item?.role === 'developer' || item?.role === 'system') {
-            const parts = markParts(
-                typeof item.content === 'string' ? [{ type: 'input_text', text: item.content }] : item.content,
-            );
-            if (parts) next = { ...item, content: parts };
-        }
-        if (next) {
-            const copy = [...input];
-            copy[i] = next;
-            return { ...payload, input: copy };
-        }
-    }
-    return payload;
 }
 
 const STATE_TYPE = 'minecraft-scheduler-v1';
@@ -335,7 +234,6 @@ class MinecraftSession {
             maxQueue: 64,
             maxBackoffMs: 300000,
             idleBackoffMaxMs: 300000,
-            cacheBreakpoint: true,
             continuous: false,
             ...options,
         };
@@ -456,7 +354,6 @@ class MinecraftSession {
         this.wrappedTools = new Map(tools.map(tool => [tool.name, tool]));
         const result = await this.createSession({ ...this.options, tools });
         this.session = result.session;
-        this.compatible = result.compatible !== false;
         this.manager = result.sessionManager ?? this.session.sessionManager;
         const messages = this.manager.getEntries().filter(entry => entry.type === 'message').length;
         this.sessionInfo = { file: this.manager.getSessionFile?.() ?? null, resumed: messages > 0, messages };
@@ -529,10 +426,7 @@ class MinecraftSession {
         };
         const originalPayload = this.session.agent.onPayload?.bind(this.session.agent);
         this.session.agent.onPayload = async (payload, model) => {
-            const base = originalPayload ? ((await originalPayload(payload, model)) ?? payload) : payload;
-            if (!this.compatible) return base;
-            if (/claude/i.test(String(base?.model ?? model?.id ?? ''))) return anthropicPayload(base);
-            return this.options.cacheBreakpoint === false ? base : markCacheBreakpoint(base);
+            return originalPayload ? ((await originalPayload(payload, model)) ?? payload) : payload;
         };
         this.unsubscribe = this.session.subscribe(event => {
             if (event.type === 'tool_execution_end' && this.active?.stop === 'wait') this.abortAgent();
