@@ -3,6 +3,8 @@
 <p align="center">Autonomous Google Gemini agents that play Minecraft.</p>
 
 <p align="center">
+  <a href="https://github.com/Sandeep-Hipparagi/gemini-minecraft-agent-harness/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Sandeep-Hipparagi/gemini-minecraft-agent-harness/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/Sandeep-Hipparagi/gemini-minecraft-agent-harness/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Sandeep-Hipparagi/gemini-minecraft-agent-harness"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <img alt="Node.js 22.19+" src="https://img.shields.io/badge/node-%E2%89%A522.19-339933?logo=node.js&logoColor=white">
   <img alt="Minecraft Java 1.21.6" src="https://img.shields.io/badge/minecraft-java%201.21.6-62B47A">
@@ -43,9 +45,11 @@
 - Java 21 (for the bundled Paper development server)
 - A Google Gemini API key ([Google AI Studio](https://aistudio.google.com/))
 
-### 1. Setup & Environment
+### 1. Clone & Setup
 
 ```sh
+git clone --branch v0.1.0 https://github.com/Sandeep-Hipparagi/gemini-minecraft-agent-harness.git
+cd gemini-minecraft-agent-harness
 npm ci
 cp .env.example .env
 ```
@@ -58,38 +62,45 @@ GEMINI_API_KEY=your_gemini_api_key_here
 
 ### 2. Start the Local Server
 
-Launch the preconfigured local PaperMC development server (sets `spawn-protection=0`, `online-mode=false`, and multi-agent memory limits):
+Launch the preconfigured local PaperMC development server (`spawn-protection=0`, `online-mode=false`, and bounded memory):
 
 ```sh
 npm run server
 ```
 
-### 3. Run an Agent
+### 3. Run a Single Agent
 
-In a separate terminal, launch an agent:
+In a separate terminal, launch a Gemini agent:
 
 ```sh
 npm start -- --objective "Gather wood, craft basic tools, and build a shelter near spawn"
 ```
 
-The agent connects, explores the spawn area, and streams its thoughts and tool calls to your console. Press `Ctrl+C` to gracefully pause execution.
+The agent connects to the server, explores the spawn area, and streams its thoughts and tool calls to your console. Press `Ctrl+C` to gracefully pause execution.
 
----
+### 4. Run a Multi-Agent Team
 
-## Multi-Agent Teams
-
-Coordinate multiple Gemini agents working toward shared objectives:
+Launch the asymmetric Pro coordinator + Flash workers crew:
 
 ```sh
-# Launch the asymmetric Pro coordinator + Flash workers crew
 npm run team -- --team examples/team.json
+```
 
-# Launch the homogeneous All-Flash crew
+Or launch the homogeneous all-Flash crew:
+
+```sh
 npm run team -- --team examples/team-flash.json
 ```
 
-- **Coordinator** (`ArchitectPro`): Runs `gemini-2.5-pro` with `"thinking": "high"`, surveying the world, writing plans to the shared workspace, and dispatching tasks over DMs.
-- **Workers** (`GathererFlash`, `BuilderFlash`): Run `gemini-2.5-flash` with `"thinking": "low"` for rapid harvesting and construction.
+### 5. Run a Timed A/B Benchmark & Compare
+
+Execute fixed-duration benchmark runs and compare side-by-side performance:
+
+```sh
+npm run benchmark -- --team examples/team.json --duration 180 --clean --out benchmarks/pro-flash.json
+npm run benchmark -- --team examples/team-flash.json --duration 180 --clean --out benchmarks/all-flash.json
+npm run compare -- benchmarks/pro-flash.json benchmarks/all-flash.json --out benchmarks/diff.json
+```
 
 ---
 
@@ -101,11 +112,15 @@ The harness includes zero-dependency tools for telemetry analysis, automated ben
 
 Stream `.agent-state/<name>/telemetry.jsonl` into console tables and export JSON reports:
 
-```sh
-# Single-agent summary
-npm run telemetry -- GeminiBot --out reports/single.json
+Single-agent summary:
 
-# Cross-agent team summary
+```sh
+npm run telemetry -- GeminiBot --out reports/single.json
+```
+
+Cross-agent team summary:
+
+```sh
 npm run telemetry -- gemini-crew --out reports/team.json
 ```
 
@@ -114,7 +129,6 @@ npm run telemetry -- gemini-crew --out reports/team.json
 Execute fixed-duration multi-agent runs that terminate cleanly and persist results:
 
 ```sh
-# Run a 3-minute benchmark starting from a clean state
 npm run benchmark -- --team examples/team.json --duration 180 --clean --out benchmarks/pro-flash.json
 npm run benchmark -- --team examples/team-flash.json --duration 180 --clean --out benchmarks/all-flash.json
 ```
@@ -143,11 +157,13 @@ See [docs/tools.md](docs/tools.md) for the full tool reference.
 
 ## Development & Testing
 
+Run the test and verification suite:
+
 ```sh
-npm run lint          # ESLint checks
-npm run format:check  # Prettier formatting verification
-npm test              # node:test test suite
-npm run check         # Full verification gate (lint + format:check + test)
+npm run lint
+npm run format:check
+npm test
+npm run check
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and coding standards.
