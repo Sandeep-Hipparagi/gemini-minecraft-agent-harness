@@ -34,9 +34,9 @@ jobs:
 
       - name: Publish @sandeep-hipparagi/gemini-minecraft-agent-harness
         run: |
-          # Temporarily rewrite name for GitHub Packages and set private to false
+          # Temporarily rewrite name for GitHub Packages and remove private field
           npm pkg set name="@sandeep-hipparagi/gemini-minecraft-agent-harness"
-          npm pkg set private=false
+          npm pkg delete private
           npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
